@@ -1,7 +1,9 @@
 [features]
 seeds = false
+debug = true
+
 [programs.localnet]
-qraffle = "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS"
+qraffle = "Cfy2pLkC4e9e4krHHSfA34QuwVD4tyQCecNYsh8kp2wy"
 
 [registry]
 url = "https://anchor.projectserum.com"
