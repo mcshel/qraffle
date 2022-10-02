@@ -2,28 +2,21 @@ import assert from 'assert';
 import * as spl from '@solana/spl-token';
 import * as anchor from '@project-serum/anchor';
 import { Program } from '@project-serum/anchor';
+import { PublicKey } from '@solana/web3.js';
 import { Qraffle } from '../target/types/qraffle';
-import { 
-    Connection, 
-    Keypair,
-    PublicKey, 
-    Transaction, 
-    TransactionInstruction,
-    SystemProgram,
-    sendAndConfirmTransaction,
-} from '@solana/web3.js';
 
-describe('The healty raffle lifecycle', async () => {
+describe('Healty raffle lifecycle', async () => {
     const program = anchor.workspace.Qraffle as Program<Qraffle>;
     
     const provider = anchor.AnchorProvider.env();
     anchor.setProvider(provider);
     
     const authoritySecret = JSON.parse(require('fs').readFileSync('/home/mpetac/.config/solana/id.json', 'utf8'));
-    const authorityKeypair = Keypair.fromSecretKey(Uint8Array.from(authoritySecret));
+    const authorityKeypair = anchor.web3.Keypair.fromSecretKey(Uint8Array.from(authoritySecret));
 
     const raffle_price = 10000;
-    const raffle_end = 1664102039;
+    const raffle_start = Math.round(Date.now() / 1000);
+    const raffle_end = Math.round(Date.now() / 1000 + 3600);
     const raffle_tickets = 10;
     const adminKeypair = anchor.web3.Keypair.generate();
     const falseAdminKeypair = anchor.web3.Keypair.generate();
@@ -61,13 +54,13 @@ describe('The healty raffle lifecycle', async () => {
         
         const size_entrants = 8 + 4 + 4 + 32 * raffle_tickets;
         const lamports_entrants = await provider.connection.getMinimumBalanceForRentExemption(8 + 4 + 4 + 32 * raffle_tickets);
-        const tx = new Transaction();
+        const tx = new anchor.web3.Transaction();
         tx.add(anchor.web3.SystemProgram.createAccount({
             fromPubkey: adminKeypair.publicKey,
-            lamports: lamports_entrants,
             newAccountPubkey: entrantsKeypair.publicKey,
-            programId: program.programId,
+            lamports: lamports_entrants,
             space: size_entrants,
+            programId: program.programId,
         }));
         
         const signature = await anchor.web3.sendAndConfirmTransaction(provider.connection, tx, [adminKeypair, entrantsKeypair], {skipPreflight: true});
@@ -110,7 +103,7 @@ describe('The healty raffle lifecycle', async () => {
         const keypair = adminKeypair;
         //const keypair = falseAdminKeypair;
         
-        const tx = await program.transaction.initialize(new anchor.BN(raffle_price), new anchor.BN(raffle_end), new anchor.BN(raffle_tickets), {
+        const tx = await program.transaction.initialize(new anchor.BN(raffle_price), new anchor.BN(raffle_start),  new anchor.BN(raffle_end), new anchor.BN(raffle_tickets), {
             accounts: {
                 adminSettings: adminSettingsAccount,
                 raffle: raffleAccount,
@@ -189,6 +182,9 @@ describe('The healty raffle lifecycle', async () => {
         //const keypair = falseAdminKeypair;
         
         let adminProceedesAccount = await spl.getOrCreateAssociatedTokenAccount(provider.connection, keypair, proceedsMint, keypair.publicKey);
+        
+        const adminProceedesAccountInfo = await provider.connection.getAccountInfo(adminProceedesAccount.address);
+        
         const tx = await program.transaction.close({
             accounts: {
                 adminSettings: adminSettingsAccount,

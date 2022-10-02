@@ -10,14 +10,12 @@ declare_id!("Cfy2pLkC4e9e4krHHSfA34QuwVD4tyQCecNYsh8kp2wy");
 pub mod qraffle {
     use super::*;
     
-    
     pub fn init_admin(ctx: Context<InitAdmin>, admin_key: Pubkey) -> Result<()> {
         let admin_settings = &mut ctx.accounts.admin_settings;
         admin_settings.admin_key = admin_key;
         
         Ok(())
     }
-    
     
     pub fn set_admin(ctx: Context<SetAdmin>, admin_key: Pubkey) -> Result<()> {
         let admin_settings = &mut ctx.accounts.admin_settings;
@@ -26,9 +24,15 @@ pub mod qraffle {
         Ok(())
     }
     
-    pub fn initialize(ctx: Context<Initialize>, price: u64, end_timestamp: i64, max_entrants: u32) -> Result<()> {
+    pub fn initialize(ctx: Context<Initialize>, price: u64, start_timestamp: i64, end_timestamp: i64, max_entrants: u32) -> Result<()> {
         
         let clock = Clock::get()?;
+        
+        require!(
+            start_timestamp < end_timestamp,
+            RaffleError::StartAfterEndTimestamp
+        );
+        
         require!(
             clock.unix_timestamp < end_timestamp,
             RaffleError::EndTimestampAlreadyPassed
@@ -37,6 +41,7 @@ pub mod qraffle {
         let raffle = &mut ctx.accounts.raffle;
         raffle.bump = *ctx.bumps.get("raffle").unwrap();
         raffle.price = price;
+        raffle.start_timestamp = start_timestamp;
         raffle.end_timestamp = end_timestamp;
         raffle.entrants = ctx.accounts.entrants.key();
         
@@ -57,6 +62,12 @@ pub mod qraffle {
         
         let clock = Clock::get()?;
         let raffle = &mut ctx.accounts.raffle;
+        
+        require!(
+            clock.unix_timestamp >= raffle.start_timestamp,
+            RaffleError::RaffleNotStarted
+        );
+        
         require!(
             clock.unix_timestamp < raffle.end_timestamp,
             RaffleError::RaffleEnded
@@ -168,7 +179,7 @@ pub struct Initialize<'info> {
         seeds = [b"raffle".as_ref(), entrants.key().as_ref()], 
         bump, 
         payer = authority, 
-        space = 8 + 1 + 8 + 8 + 32,
+        space = 8 + 1 + 8 + 8 + 8 + 32,
     )]
     pub raffle: Account<'info, Raffle>,
     #[account(zero)]
@@ -239,6 +250,7 @@ pub struct AdminSettings {
 pub struct Raffle {
     pub bump: u8,
     pub price: u64,
+    pub start_timestamp: i64,
     pub end_timestamp: i64,
     pub entrants: Pubkey,
 }
@@ -268,7 +280,9 @@ impl Entrants {
         let current_index = Entrants::BASE_SIZE + 32 * self.total as usize;
         let entrant_slice: &mut [u8] = &mut entrants_data[current_index..current_index + 32];
         entrant_slice.copy_from_slice(&entrant.to_bytes());
-        self.total += 1;
+        
+        //self.total += 1;
+        self.total = self.total.checked_add(1).ok_or(RaffleError::InvalidCalculation)?;
 
         Ok(())
     }
@@ -277,10 +291,14 @@ impl Entrants {
 
 #[error_code]
 pub enum RaffleError {
+    #[msg("Start timestamp must be smaller than end timestamp")]
+    StartAfterEndTimestamp,
     #[msg("End timestamp already passed")]
     EndTimestampAlreadyPassed,
     #[msg("Entrants account too small for max entrants")]
     EntrantsAccountTooSmallForMaxEntrants,
+    #[msg("Raffle has not yet started")]
+    RaffleNotStarted,
     #[msg("Raffle has ended")]
     RaffleEnded,
     #[msg("Invalid calculation")]
